@@ -1,15 +1,33 @@
 
-cmake_minimum_required (VERSION 2.8.12)
+cmake_minimum_required (VERSION 3.1)
 project (CS225A)
-SET(CMAKE_CXX_FLAGS "-std=c++11 -I/usr/include -I/usr/local/include -Wno-ignored-attributes -Wno-deprecated-declarations")
+# SET(CMAKE_CXX_FLAGS "-I/usr/include -I/usr/local/include -Wno-ignored-attributes -Wno-deprecated-declarations")
+SET(CMAKE_CXX_STANDARD 14)
+SET(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Explicitly include for Macs without XCode initialized
+include_directories(/usr/include /usr/local/include)
 
 # set common source
 set (CS225A_COMMON_SOURCE
-	${PROJECT_SOURCE_DIR}/src/redis/RedisClient.h
-	${PROJECT_SOURCE_DIR}/src/timer/LoopTimer.h)
+	${PROJECT_SOURCE_DIR}/src/redis/RedisClient.cpp
+	${PROJECT_SOURCE_DIR}/src/timer/LoopTimer.cpp
+)
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
 # set common dependencies
+
+# - eigen3
+set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
+if(NOT EIGEN3_INCLUDE_DIR)
+	find_package(Eigen3 QUIET)
+	# TODO: Find automatic way to find for Ubuntu 14.04
+	if(NOT EIGEN3_INCLUDE_DIR)
+		set(EIGEN3_INCLUDE_DIR /usr/include/eigen3)
+	endif()
+endif()
+include_directories(${EIGEN3_INCLUDE_DIR})
+
 # - CHAI3D
 find_package(CHAI3D REQUIRED)
 include_directories(${CHAI3D_INCLUDE_DIRS})
@@ -49,9 +67,6 @@ elseif (CMAKE_SYSTEM_NAME MATCHES Linux)
 	set(JSONCPP_LIBRARY ${JSONCPP_LIBRARIES})
 endif ()
 
-# - eigen3
-find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
 
 set(CS225A_COMMON_LIBRARIES
 	${CHAI3D_LIBARIES}
@@ -76,5 +91,6 @@ add_subdirectory(src/simulation)
 #add_subdirectory(src/hw2)
 #add_subdirectory(src/hw3)
 #add_subdirectory(src/hapticshandwriting)
-#add_subdirectory(src/demo_project)
 add_subdirectory(src/talbots_code)
+add_subdirectory(src/demo_project)
+add_subdirectory(src/puma)
