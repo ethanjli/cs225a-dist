@@ -1,6 +1,3 @@
-# Mac
-.DS_STORE
-
 # Compiled Object files
 *.slo
 *.lo
@@ -40,12 +37,15 @@ build_dbg
 # VScode Dir
 .vscode
 
-# Vim swapfiles
+# Mac
+.DS_STORE
+
+# Temporary files
 *.swp
 *.swo
+*~
 
 # External libraries
-external
-sai2-common
+external/*
 sai2-simulation
 resources
