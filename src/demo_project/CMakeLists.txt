@@ -4,8 +4,16 @@ ADD_EXECUTABLE (demo_project
 	DemoProject.cpp
 )
 
+ADD_EXECUTABLE (haptic_interface
+	${CS225A_COMMON_SOURCE}
+	01-mydevice.cpp
+)
+
 # and link the library against the executable
 TARGET_LINK_LIBRARIES (demo_project
+	${CS225A_COMMON_LIBRARIES}
+)
+TARGET_LINK_LIBRARIES (haptic_interface
 	${CS225A_COMMON_LIBRARIES}
 )
 
