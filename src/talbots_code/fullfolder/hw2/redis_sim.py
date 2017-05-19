@@ -57,6 +57,22 @@ def update(val):
     r.set("position", str(xpos) + ", " + str(ypos) + ", " + str(zpos))
     r.set("rotation", str(rotation.item((0,0))) + " " +str(rotation.item((0,1))) + " " + str(rotation.item((0,2))) + "; " +str(rotation.item((1,0))) + " " +str(rotation.item((1,1))) + " " + str(rotation.item((1,2))) + "; " +str(rotation.item((2,0))) + " " +str(rotation.item((2,1))) + " " + str(rotation.item((2,2))))
 
+
+# def updateredis(val):
+#     x_pos.val = xpos 
+#     y_pos.val = ypos 
+#     z_pos.val = zpos 
+#     x_rot.val = xrot 
+#     y_rot.val = yrot 
+#     z_rot.val = zrot 
+#     xmat = np.matrix([[1, 0, 0], [0, math.cos(xrot), -math.sin(xrot)], [0, math.sin(xrot), math.cos(xrot)]])
+#     ymat = np.matrix([[math.cos(yrot), 0, math.sin(yrot)], [0, 1, 0], [-math.sin(yrot), 0, math.cos(yrot)]])
+#     zmat = np.matrix([[math.cos(zrot), -math.sin(zrot), 0], [math.sin(zrot), math.cos(zrot), 0], [0, 0, 1]])
+#     rotation = xmat * ymat * zmat
+#     r.set("position", str(xpos) + ", " + str(ypos) + ", " + str(zpos))
+#     r.set("rotation", str(rotation.item((0,0))) + " " +str(rotation.item((0,1))) + " " + str(rotation.item((0,2))) + "; " +str(rotation.item((1,0))) + " " +str(rotation.item((1,1))) + " " + str(rotation.item((1,2))) + "; " +str(rotation.item((2,0))) + " " +str(rotation.item((2,1))) + " " + str(rotation.item((2,2))))
+
+
     # l.set_ydata(amp*np.sin(2*np.pi*freq*t))
     # fig.canvas.draw_idle()
 x_pos.on_changed(update)
@@ -68,6 +84,9 @@ z_rot.on_changed(update)
 
 resetax = plt.axes([0.8, 0.025, 0.1, 0.04])
 button = Button(resetax, 'Reset', color=axcolor, hovercolor='0.975')
+
+# while 1:
+#     updateredis()
 
 
 def reset(event):
