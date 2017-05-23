@@ -373,6 +373,8 @@ int main(int argc, char* argv[])
     // create a haptic device handler
     handler = new cHapticDeviceHandler();
 
+    cout << handler->getNumDevices() << endl;
+
     // get a handle to the first haptic device
     handler->getDevice(hapticDevice, 0);
 
@@ -508,7 +510,7 @@ void keyCallback(GLFWwindow* a_window, int a_key, int a_scancode, int a_action, 
     // option - exit
     else if ((a_key == GLFW_KEY_ESCAPE) || (a_key == GLFW_KEY_Q))
     {
-        glfwSetWindowShouldClose(a_window, GLFW_TRUE);
+        glfwSetWindowShouldClose(a_window, 1);
     }
 
     // option - enable/disable force field
@@ -544,20 +546,20 @@ void keyCallback(GLFWwindow* a_window, int a_key, int a_scancode, int a_action, 
         const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
         // set fullscreen or window mode
-        if (fullscreen)
-        {
-            glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
-            glfwSwapInterval(swapInterval);
-        }
-        else
-        {
-            int w = 0.8 * mode->height;
-            int h = 0.5 * mode->height;
-            int x = 0.5 * (mode->width - w);
-            int y = 0.5 * (mode->height - h);
-            glfwSetWindowMonitor(window, NULL, x, y, w, h, mode->refreshRate);
-            glfwSwapInterval(swapInterval);
-        }
+        // if (fullscreen)
+        // {
+        //     glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        //     glfwSwapInterval(swapInterval);
+        // }
+        // else
+        // {
+        //     int w = 0.8 * mode->height;
+        //     int h = 0.5 * mode->height;
+        //     int x = 0.5 * (mode->width - w);
+        //     int y = 0.5 * (mode->height - h);
+        //     glfwSetWindowMonitor(window, NULL, x, y, w, h, mode->refreshRate);
+        //     glfwSwapInterval(swapInterval);
+        // }
     }
 
     // option - toggle vertical mirroring
@@ -842,7 +844,7 @@ void updateHaptics(void)
         // redis_client.setEigenMatrixDerivedString(Y_pos, redis_buf);
         // redis_buf = position(2);  
         // redis_client.setEigenMatrixDerivedString(Z_pos, redis_buf);
-        std::cout<<force << "\n" << force_sum<<endl<<std::endl;
+        // std::cout<<force << "\n" << force_sum<<endl<<std::endl;
     }
     
     // exit haptics thread
