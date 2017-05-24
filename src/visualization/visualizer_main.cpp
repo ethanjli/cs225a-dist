@@ -200,6 +200,8 @@ int main(int argc, char** argv) {
 	x_prev = x;
 	x_des_prev = x_des;
 
+
+
 	// Create trajectory graphics objects and insert them into the chai3d world
 	auto x_traj = createTrajectory(EE_TRAJECTORY_CHAI_NAME, x);
 	auto x_des_traj = createTrajectory(EE_DESIRED_TRAJECTORY_CHAI_NAME, x_des);
@@ -237,6 +239,9 @@ int main(int argc, char** argv) {
 			idx_des_traj = updateTrajectoryPoint(x_des_traj, idx_des_traj, x_des);
 			x_des_prev = x_des;
 		}
+		std::cout <<"joint coords \n"  << robot->_q << std::endl << std::endl;
+
+		std::cout << "endeffector \n"<< x << std::endl << std::endl;
 
 		// Update end effector desired position marker
 		if (x_des_marker != nullptr) {

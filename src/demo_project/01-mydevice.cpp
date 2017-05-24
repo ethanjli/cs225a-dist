@@ -796,7 +796,7 @@ void updateHaptics(void)
         Eigen::Vector3d vec;
         Eigen::Matrix3d orient;
         Eigen::Vector3d sensed_force, sensed_torque;
-        vec << 15 * position(0), 15 * position(1), 15 * position(2);
+        vec <<  position(0),  position(1), position(2);
         orient << rotation(0, 0), rotation(0, 1),rotation(0, 2),
                     rotation(1,0), rotation(1,1),rotation(1,2),
                     rotation(2,0), rotation(2,1),rotation(2,2);
@@ -844,7 +844,7 @@ void updateHaptics(void)
         // redis_client.setEigenMatrixDerivedString(Y_pos, redis_buf);
         // redis_buf = position(2);  
         // redis_client.setEigenMatrixDerivedString(Z_pos, redis_buf);
-        // std::cout<<force << "\n" << force_sum<<endl<<std::endl;
+        std::cout<<vec << "\n" <<std::endl;
     }
     
     // exit haptics thread

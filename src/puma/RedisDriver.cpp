@@ -89,6 +89,10 @@ void RedisDriver::init() {
 	// Connect to Puma server
 	puma_robot_ = std::make_unique<RobotCom>();
 
+	// dangerous, do not try
+	// float qmaxData[6] = {2.79, 1.75, 4.19, 3.14, 1.75, 4.64};
+	// puma_robot_->setStatus(SET_QMAX, control_mode_, qmaxData, 6);
+
 	// Get Puma configuration
 	puma_robot_->getStatus(GET_JPOS, data_buffer_);
 	eigenVectorFromBuffer(q_);
@@ -117,6 +121,7 @@ void RedisDriver::init() {
 	redis_client_.setEigenMatrixString(KEY_JOINT_POSITIONS, q_);
 	redis_client_.setEigenMatrixString(KEY_JOINT_VELOCITIES, dq_);
 	redis_client_.setEigenMatrixString(KEY_JOINT_TORQUES, Gamma_);
+
 }
 
 ControlMode RedisDriver::parseControlMode(std::string& control_mode_str) const {
@@ -337,6 +342,7 @@ void RedisDriver::run() {
 			eigenVectorFromBuffer(x_);
 			redis_client_.setEigenMatrixString(KEY_EE_POS, x_.head(3));
 			redis_client_.setEigenMatrixString(KEY_EE_ORI, x_.tail<4>());
+			std::cout << q_ << std::endl;
 #endif  // CONNECT_SERVER
 		}
 	} catch (const std::exception& e) {

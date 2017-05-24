@@ -28,3 +28,10 @@ Then you can make the current project:
 sh make.sh
 ```
 
+sudo ./haptic_interface 
+./visualizer resources/puma_demo/world.urdf resources/puma_demo/puma.urdf puma
+./puma_driver 
+./puma_demo 
+
+
+
