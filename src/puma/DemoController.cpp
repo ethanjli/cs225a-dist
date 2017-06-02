@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
 	Eigen::VectorXd Kp(Puma::DOF);
 	Eigen::VectorXd Kv(Puma::DOF);
 	Eigen::VectorXd q_des(Puma::DOF);
-	const double kToleranceInitQ  = 4;  // Joint space initialization tolerance
+	const double kToleranceInitQ  = 3.5;  // Joint space initialization tolerance
 	const double kToleranceInitDq = 0.1;  // Joint space initialization tolerance
 
 	// If lowering gains, set Kp first. If increasing, set Kv first.
@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
 
 	// Commands MUST be sent as an atomic Redis transaction with MSET
 	q_des.setZero();
-	q_des << 0.33, -0.83, 2.99, -0.1, -1.10, -1.57;
+	q_des << 0.0, -0.83, 2.99, 0.0, -0.50, 0.0;
 	//q_des *= M_PI / 180.0;
 	redis_client.mset({
 		{Puma::KEY_CONTROL_MODE, "JGOTO"},
@@ -103,10 +103,6 @@ int main(int argc, char** argv) {
 		{Puma::KEY_KP, RedisClient::encodeEigenMatrixString(Kp)},
 		{Puma::KEY_KV, RedisClient::encodeEigenMatrixString(Kv)}
 	});
-
-	Eigen::Vector3d readPos;
-
-
 
 	// Wait for convergence
 	while (g_runloop) {
@@ -123,21 +119,39 @@ int main(int argc, char** argv) {
 
 		controller_counter++;
 
-		redis_client.getEigenMatrixDerivedString("position", readPos);
 
 		std::cout << robot->_q.norm() << std::endl;
-
-
 	}
 
-	// return 0;
-	// while(true) {
-		
-	// }
+	/***** Float *****/
+	cout << "FLOAT" << endl;
 
-	// return 0;
+	redis_client.mset({
+		{Puma::KEY_CONTROL_MODE, "FLOAT"}
+	});
 
-	/***** Track circle *****/
+	while(true) {
+		// Wait for next scheduled loop (controller must run at precise rate)
+		timer.waitForNextLoop();
+
+		// Read from Redis current sensor values and update the model
+		robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
+		robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
+		robot->updateModel();
+
+		// Print out end-effector pose
+		Eigen::Matrix3d rotation;
+		robot->rotation(rotation, "end-effector");
+		Eigen::Quaterniond quat = Eigen::Quaterniond(rotation);
+		std::cout << quat.w() << ", " << quat.x() << ", " << quat.y() << ", " << quat.z() << std::endl;
+		Eigen::Vector3d position;
+		robot->position(position, "end-effector", Eigen::Vector3d::Zero());
+		std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
+		// TODO: figure out how to wait for the enter key from the command-line without blocking the loop
+	}
+	return 0;
+
+	/***** Track haptic device *****/
 
 	cout << "GOTO" << endl;
 
@@ -148,7 +162,7 @@ int main(int argc, char** argv) {
 	// q_des << 0.33, -0.83, 2.4, -0.1, -1.10, -1.57;
 	
 	Eigen::Vector3d ee_pos_des = ee_pos_init;
-	Eigen::Quaterniond ee_ori_des(0.876506, -0.348972, 0.216104, 0.251505);
+	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
 	const double kAmplitude = 0.1;
 	Kp.fill(200);
 	Kv.fill(40);
@@ -162,6 +176,7 @@ int main(int argc, char** argv) {
 		{Puma::KEY_KV, RedisClient::encodeEigenMatrixString(Kv)}
 	});
 
+	Eigen::Vector3d readPos;
 	// Control loop
 	while (g_runloop) {
 		// Wait for next scheduled loop (controller must run at precise rate)
@@ -169,6 +184,7 @@ int main(int argc, char** argv) {
 		redis_client.getEigenMatrixDerivedString("position", readPos);
 		Eigen::Matrix3d rotation;
 		robot->rotation(rotation, "end-effector");
+		Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
 		Eigen::Quaterniond quat = Eigen::Quaterniond(rotation);
 		std::cout << quat.w() << ", " << quat.x() << ", " << quat.y() << ", " << quat.z() << std::endl;
 
@@ -185,8 +201,10 @@ int main(int argc, char** argv) {
 		//               kAmplitude * sin(t_curr) + ee_pos_init(1),
 		//               ee_pos_init(2);
 
-		ee_pos_des << 0.7 - readPos(0), 0.4 - readPos(1), 0.0;
-
+		ee_pos_des << 0.7 - readPos(0), 0.4 - readPos(1), 0.0 + readPos(2);
+		if(ee_pos_des(2) < -.05) {
+			ee_pos_des(2) = -0.05;
+		}
 		// Send command
 		x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
 		redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);

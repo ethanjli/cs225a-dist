@@ -342,7 +342,7 @@ void RedisDriver::run() {
 			eigenVectorFromBuffer(x_);
 			redis_client_.setEigenMatrixString(KEY_EE_POS, x_.head(3));
 			redis_client_.setEigenMatrixString(KEY_EE_ORI, x_.tail<4>());
-			std::cout << q_ << std::endl;
+			// std::cout << q_ << std::endl;
 #endif  // CONNECT_SERVER
 		}
 	} catch (const std::exception& e) {
