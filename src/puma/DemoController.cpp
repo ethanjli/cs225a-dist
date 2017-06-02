@@ -14,6 +14,8 @@
 #include <fstream>
 #include <string>
 #include <signal.h>
+#include <cstring>
+#include <sys/select.h>
 
 using namespace std;
 
@@ -43,6 +45,35 @@ static void setCtrlCHandler(void (*userCallback)(int)) {
 	sigemptyset(&sigIntHandler.sa_mask);
 	sigIntHandler.sa_flags = 0;
 	sigaction(SIGINT, &sigIntHandler, NULL);
+}
+
+bool updateUntilInput(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client) {
+	// Update the robot until the user hits Enter on the console
+	fd_set read_fds;
+	struct timeval tv = {0, 0};
+	int retval, len;
+	char buff[255] = {0};
+	while (true) {
+		// Check stdin
+		FD_ZERO(&read_fds);
+		FD_SET(0, &read_fds);
+		retval = select(1, &read_fds, NULL, NULL, &tv);
+		if (retval == -1) { // Error
+			perror("select()");
+			return false;
+		} else if (retval) { // Input is available now
+			fgets(buff, sizeof(buff), stdin);
+			len = strlen(buff) - 1;
+			if (buff[len] == '\n') buff[len] = '\0';
+			return true;
+		}
+
+		// Update robot
+		timer.waitForNextLoop();
+		robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
+		robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
+		robot->updateModel();
+	}
 }
 
 int main(int argc, char** argv) {
@@ -80,7 +111,7 @@ int main(int argc, char** argv) {
 
 	/***** Go to home position *****/
 
-	cout << "JGOTO" << endl;
+	cout << "Initializing. JGOTO" << endl;
 
 	// Declare control variables
 	Eigen::VectorXd Kp(Puma::DOF);
@@ -123,21 +154,18 @@ int main(int argc, char** argv) {
 		std::cout << robot->_q.norm() << std::endl;
 	}
 
-	/***** Float *****/
-	cout << "FLOAT" << endl;
+	/***** Calibrate *****/
+	cout << "Calibrating. FLOAT" << endl;
 
 	redis_client.mset({
 		{Puma::KEY_CONTROL_MODE, "FLOAT"}
 	});
 
-	while(true) {
-		// Wait for next scheduled loop (controller must run at precise rate)
-		timer.waitForNextLoop();
-
-		// Read from Redis current sensor values and update the model
-		robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
-		robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
-		robot->updateModel();
+	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
+		if (!updateUntilInput(robot, timer, redis_client)) {
+			std::cerr << "Error getting input from console!" << std::endl;
+			return 1;
+		}
 
 		// Print out end-effector pose
 		Eigen::Matrix3d rotation;
@@ -147,7 +175,6 @@ int main(int argc, char** argv) {
 		Eigen::Vector3d position;
 		robot->position(position, "end-effector", Eigen::Vector3d::Zero());
 		std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
-		// TODO: figure out how to wait for the enter key from the command-line without blocking the loop
 	}
 	return 0;
 
