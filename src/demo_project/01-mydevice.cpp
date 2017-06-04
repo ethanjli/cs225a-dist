@@ -631,6 +631,16 @@ void updateGraphics(void)
 
 void updateHaptics(void)
 {
+    // gains
+    const double constraint_dist_thresh = -0.05;
+    const double eta = 0.01;
+
+    bool constraint_active;
+    double closest_distance;
+    double constraint_force;
+
+
+
     // simulation in now running
     simulationRunning  = true;
     simulationFinished = false;
@@ -825,9 +835,9 @@ void updateHaptics(void)
         }
 
         cVector3d force_sum;
-        force_sum(0) = force(0) + stiffnessRatio * sensed_force(0) > 6 ? 6 : force(0) + stiffnessRatio * sensed_force(0);
-        force_sum(1) = force(1) + stiffnessRatio * sensed_force(1) > 6 ? 6 : force(1) + stiffnessRatio * sensed_force(1);
-        force_sum(2) = force(2) + stiffnessRatio * sensed_force(2) > 6 ? 6 : force(2) + stiffnessRatio * sensed_force(2);
+        // force_sum(0) = force(0) + stiffnessRatio * sensed_force(0) > 6 ? 6 : force(0) + stiffnessRatio * sensed_force(0);
+        // force_sum(1) = force(1) + stiffnessRatio * sensed_force(1) > 6 ? 6 : force(1) + stiffnessRatio * sensed_force(1);
+        // force_sum(2) = force(2) + stiffnessRatio * sensed_force(2) > 6 ? 6 : force(2) + stiffnessRatio * sensed_force(2);
 
         cVector3d torque_sum;
         torque_sum(0) = torque(0) + stiffnessRatio * sensed_torque(0) > 6 ? 6 : torque(0) + stiffnessRatio * sensed_torque(0);
@@ -835,8 +845,21 @@ void updateHaptics(void)
         torque_sum(2) = torque(2) + stiffnessRatio * sensed_torque(2) > 6 ? 6 : torque(2) + stiffnessRatio * sensed_torque(2);
 
 
+        // - is distance constraint active? if so, compute constraint force
+        closest_distance = position(2);
+        constraint_active = (closest_distance < constraint_dist_thresh);
 
-        hapticDevice->setForceAndTorqueAndGripperForce(force_sum, torque_sum, gripperForce);
+        force_sum = force;
+        // - compute joint torques
+        if (constraint_active) {
+            constraint_force = eta*(1/(1e-3 + closest_distance) - 1/(1e-3 + constraint_dist_thresh))*1/pow(1e-3 + closest_distance, 2);
+            force_sum(2) = force(2) +  stiffnessRatio * constraint_force > 10 ? 10 : force(2) + stiffnessRatio * constraint_force;
+        }
+        hapticDevice->setForce(force_sum);
+
+
+        // hapticDevice->setForceAndTorqueAndGripperForce(force_sum, torque_sum, gripperForce);
+        
 
         // signal frequency counter
         freqCounterHaptics.signal(1);
@@ -844,7 +867,7 @@ void updateHaptics(void)
         // redis_client.setEigenMatrixDerivedString(Y_pos, redis_buf);
         // redis_buf = position(2);  
         // redis_client.setEigenMatrixDerivedString(Z_pos, redis_buf);
-        std::cout<<vec << "\n" <<std::endl;
+        // std::cout<<vec << "\n" <<std::endl;
     }
     
     // exit haptics thread
