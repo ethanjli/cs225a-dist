@@ -14,6 +14,9 @@
 #include <fstream>
 #include <string>
 #include <signal.h>
+#include <cstring>
+#include <sys/select.h>
+#include <algorithm>
 
 using namespace std;
 
@@ -45,43 +48,72 @@ static void setCtrlCHandler(void (*userCallback)(int)) {
 	sigaction(SIGINT, &sigIntHandler, NULL);
 }
 
-int main(int argc, char** argv) {
+// WORKSPACE HELPERS
 
-	cout << "This program is a demo Redis controller for the Puma." << endl;
+double clamp_range(double value, double min, double max) {
+	return std::max(min, std::min(max, value));
+}
 
-	cout << "Loading URDF world model file: " << kWorldFile << endl;
+double map_range(double value, double in_min, double in_max, double out_min, double out_max) {
+	double out = (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+	if (out_min > out_max) std::swap(out_min, out_max);
+	return clamp_range(out, out_min, out_max);
+}
 
-	// Start redis client
-	// Make sure redis-server is running at localhost with default port 6379
-	auto redis_client = RedisClient();
-	redis_client.serverIs(kRedisServerInfo);
+class Workspace {
+public:
+	double x_min = 0;
+	double x_max = 0;
+	double y_min = 0;
+	double y_max = 0;
+	double z_min = 0;
+	double z_max = 0;
 
-	// Set Ctrl C handler
-	setCtrlCHandler(stop);
-	g_redis_client = &redis_client;
+	Eigen::Vector3d mapFromHapticDevice(const Eigen::Vector3d& hapticDevicePos) {
+		return Eigen::Vector3d( map_range(hapticDevicePos(0), 0.07, -0.05, x_min, x_max),
+					map_range(hapticDevicePos(1), -0.11, 0.11, y_min, y_max),
+					map_range(hapticDevicePos(2), 0.0, 0.1, z_min, z_max));
+	};
+};
 
-	// Load robot
-	auto robot = new Model::ModelInterface(kRobotFile, Model::rbdl, Model::urdf, false);
+// CONTROL HELPERS
+
+void updateRobot(Model::ModelInterface *robot, RedisClient& redis_client) {
+	robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
+	robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
 	robot->updateModel();
+}
 
-	// Create a loop timer
-	uintmax_t controller_counter = 0;
-	const double control_freq = 1000;
-	LoopTimer timer;
-	timer.setLoopFrequency(control_freq);   // 1 KHz
-	timer.setCtrlCHandler(stop);    // exit while loop on ctrl-c
-	timer.initializeTimer(1e6); // 1 ms pause before starting loop
+bool updateUntilInput(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client) {
+	// Update the robot until the user hits Enter on the console
+	fd_set read_fds;
+	struct timeval tv = {0, 0};
+	int retval, len;
+	char buff[255] = {0};
+	while (g_runloop) {
+		// Check stdin
+		FD_ZERO(&read_fds);
+		FD_SET(0, &read_fds);
+		retval = select(1, &read_fds, NULL, NULL, &tv);
+		if (retval == -1) { // Error
+			perror("select()");
+			return false;
+		} else if (retval) { // Input is available now
+			fgets(buff, sizeof(buff), stdin);
+			len = strlen(buff) - 1;
+			if (buff[len] == '\n') buff[len] = '\0';
+			return true;
+		}
 
-	/***** Hold *****/
+		// Update robot
+		timer.waitForNextLoop();
+		updateRobot(robot, redis_client);
+	}
+}
 
-	cout << "HOLD" << endl;
+// CONTROL PHASES
 
-	redis_client.set(Puma::KEY_CONTROL_MODE, "JHOLD");
-
-	/***** Go to home position *****/
-
-	cout << "JGOTO" << endl;
-
+void initializeJoints(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client) {
 	// Declare control variables
 	Eigen::VectorXd Kp(Puma::DOF);
 	Eigen::VectorXd Kv(Puma::DOF);
@@ -108,36 +140,26 @@ int main(int argc, char** argv) {
 	while (g_runloop) {
 		// Wait for next scheduled loop (controller must run at precise rate)
 		timer.waitForNextLoop();
-
 		// Read from Redis current sensor values and update the model
-		robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
-		robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
-		robot->updateModel();
+		updateRobot(robot, redis_client);
 
 		// Check for convergence
 		if (robot->_q.norm() < kToleranceInitQ && robot->_dq.norm() < kToleranceInitDq) break;
 
-		controller_counter++;
-
-
 		std::cout << robot->_q.norm() << std::endl;
 	}
+}
 
-	/***** Float *****/
-	cout << "FLOAT" << endl;
-
+Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client) {
 	redis_client.mset({
 		{Puma::KEY_CONTROL_MODE, "FLOAT"}
 	});
 
-	while(true) {
-		// Wait for next scheduled loop (controller must run at precise rate)
-		timer.waitForNextLoop();
-
-		// Read from Redis current sensor values and update the model
-		robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
-		robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
-		robot->updateModel();
+	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
+		if (!updateUntilInput(robot, timer, redis_client)) {
+			std::cerr << "Error getting input from console!" << std::endl;
+			stop(0);
+		}
 
 		// Print out end-effector pose
 		Eigen::Matrix3d rotation;
@@ -147,23 +169,25 @@ int main(int argc, char** argv) {
 		Eigen::Vector3d position;
 		robot->position(position, "end-effector", Eigen::Vector3d::Zero());
 		std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
-		// TODO: figure out how to wait for the enter key from the command-line without blocking the loop
 	}
-	return 0;
+	Workspace workspace;
+	workspace.x_min = 0.65;
+	workspace.x_max = 0.9;
+	workspace.y_min = 0.46;
+	workspace.y_max = -0.11;
+	workspace.z_min = -0.16;
+	workspace.z_max = -0.07;
+	return workspace;
+}
 
-	/***** Track haptic device *****/
-
-	cout << "GOTO" << endl;
-
+void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
 	// Declare control variables
 	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
-	Eigen::Vector3d ee_pos_init(0.7, 0.4, 0.0);
-	q_des.setZero();
-	// q_des << 0.33, -0.83, 2.4, -0.1, -1.10, -1.57;
-	
-	Eigen::Vector3d ee_pos_des = ee_pos_init;
+	Eigen::Vector3d ee_pos_des(0.7, 0.4, 0.0);
 	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
-	const double kAmplitude = 0.1;
+
+	Eigen::VectorXd Kp(Puma::DOF);
+	Eigen::VectorXd Kv(Puma::DOF);
 	Kp.fill(200);
 	Kv.fill(40);
 
@@ -176,45 +200,74 @@ int main(int argc, char** argv) {
 		{Puma::KEY_KV, RedisClient::encodeEigenMatrixString(Kv)}
 	});
 
-	Eigen::Vector3d readPos;
+	Eigen::Vector3d hapticDevicePos;
 	// Control loop
 	while (g_runloop) {
 		// Wait for next scheduled loop (controller must run at precise rate)
-
-		redis_client.getEigenMatrixDerivedString("position", readPos);
-		Eigen::Matrix3d rotation;
-		robot->rotation(rotation, "end-effector");
-		Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
-		Eigen::Quaterniond quat = Eigen::Quaterniond(rotation);
-		std::cout << quat.w() << ", " << quat.x() << ", " << quat.y() << ", " << quat.z() << std::endl;
-
 		timer.waitForNextLoop();
-		double t_curr = timer.elapsedTime();
-
 		// Read from Redis current sensor values and update the model
-		robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
-		robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
-		robot->updateModel();
+		updateRobot(robot, redis_client);
 
-		// Create a circle trajectory
-		// ee_pos_des << kAmplitude * cos(t_curr) + ee_pos_init(0),
-		//               kAmplitude * sin(t_curr) + ee_pos_init(1),
-		//               ee_pos_init(2);
+		// Read from the haptic device
+		redis_client.getEigenMatrixDerivedString("position", hapticDevicePos);
 
-		ee_pos_des << 0.7 - readPos(0), 0.4 - readPos(1), 0.0 + readPos(2);
-		if(ee_pos_des(2) < -.05) {
-			ee_pos_des(2) = -0.05;
-		}
-		// Send command
-		x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
-		redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
+		// Calculate the end-effector target position
+		ee_pos_des = workspace.mapFromHapticDevice(hapticDevicePos);
 
 		// Send desired position for visualization
 		redis_client.setEigenMatrixString(Puma::KEY_EE_POS + "_des", ee_pos_des);
 
-		controller_counter++;
+		// Send command to Puma
+		x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
+		redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
 	}
 
+}
+
+int main(int argc, char** argv) {
+
+	cout << "This program is a demo Redis controller for the Puma." << endl;
+
+	cout << "Loading URDF world model file: " << kWorldFile << endl;
+
+	// Start redis client
+	// Make sure redis-server is running at localhost with default port 6379
+	auto redis_client = RedisClient();
+	redis_client.serverIs(kRedisServerInfo);
+
+	// Set Ctrl C handler
+	setCtrlCHandler(stop);
+	g_redis_client = &redis_client;
+
+	// Load robot
+	auto robot = new Model::ModelInterface(kRobotFile, Model::rbdl, Model::urdf, false);
+	robot->updateModel();
+
+	// Create a loop timer
+	// uintmax_t controller_counter = 0;
+	const double control_freq = 1000;
+	LoopTimer timer;
+	timer.setLoopFrequency(control_freq);   // 1 KHz
+	timer.setCtrlCHandler(stop);    // exit while loop on ctrl-c
+	timer.initializeTimer(1e6); // 1 ms pause before starting loop
+
+	/***** Hold *****/
+	cout << "Starting. HOLD" << endl;
+	redis_client.set(Puma::KEY_CONTROL_MODE, "JHOLD");
+
+	/***** Initialize joints *****/
+	cout << "Initializing joints. JGOTO" << endl;
+	initializeJoints(robot, timer, redis_client);
+
+	/***** Calibrate end-effector *****/
+	cout << "Calibrating end-effector. FLOAT" << endl;
+	Workspace workspace = calibratePositions(robot, timer, redis_client);
+
+	/***** Mirror haptic device *****/
+	cout << "Mirroring haptic device. GOTO" << endl;
+	mirrorHapticDevice(robot, timer, redis_client, workspace);
+
+	/***** Quit *****/
 	redis_client.set(Puma::KEY_CONTROL_MODE, "BREAK");
 
 	return 0;
