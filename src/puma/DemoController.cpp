@@ -60,6 +60,11 @@ double map_range(double value, double in_min, double in_max, double out_min, dou
 	return clamp_range(out, out_min, out_max);
 }
 
+class Calibration {
+public:
+	std::vector<Eigen::Vector3d> corners;
+};
+
 class Workspace {
 public:
 	double x_min = 0;
@@ -75,6 +80,17 @@ public:
 					map_range(hapticDevicePos(2), 0.0, 0.1, z_min, z_max));
 	};
 };
+
+Workspace calibrate_workspace(Calibration calibration) {
+	Workspace workspace;
+	workspace.x_min = 0.5 * (calibration.corners[2](0) + calibration.corners[3](0));
+	workspace.x_max = 0.5 * (calibration.corners[0](0) + calibration.corners[1](0));
+	workspace.y_min = 0.5 * (calibration.corners[0](1) + calibration.corners[2](1));
+	workspace.y_max = 0.5 * (calibration.corners[1](1) + calibration.corners[3](1));
+	workspace.z_min = 0.25 * (calibration.corners[0](2) + calibration.corners[1](2) + calibration.corners[2](2) + calibration.corners[3](2));
+	workspace.z_max = workspace.z_min + 0.08;
+	return workspace;
+}
 
 // CONTROL HELPERS
 
@@ -118,7 +134,7 @@ void initializeJoints(Model::ModelInterface *robot, LoopTimer& timer, RedisClien
 	Eigen::VectorXd Kp(Puma::DOF);
 	Eigen::VectorXd Kv(Puma::DOF);
 	Eigen::VectorXd q_des(Puma::DOF);
-	const double kToleranceInitQ  = 3.5;  // Joint space initialization tolerance
+	const double kToleranceInitQ  = 0.1;  // Joint space initialization tolerance
 	const double kToleranceInitDq = 0.1;  // Joint space initialization tolerance
 
 	// If lowering gains, set Kp first. If increasing, set Kv first.
@@ -144,9 +160,9 @@ void initializeJoints(Model::ModelInterface *robot, LoopTimer& timer, RedisClien
 		updateRobot(robot, redis_client);
 
 		// Check for convergence
-		if (robot->_q.norm() < kToleranceInitQ && robot->_dq.norm() < kToleranceInitDq) break;
+		if ((robot->_q - q_des).lpNorm<Eigen::Infinity>() < kToleranceInitQ && robot->_dq.norm() < kToleranceInitDq) break;
 
-		std::cout << robot->_q.norm() << std::endl;
+		std::cout << (robot->_q - q_des).lpNorm<Eigen::Infinity>() << std::endl;
 	}
 }
 
@@ -155,7 +171,18 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 		{Puma::KEY_CONTROL_MODE, "FLOAT"}
 	});
 
+	Calibration calibration;
+
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
+		if (i == 0) {
+			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
+		} else if (i == 1) {
+			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
+		} else if (i == 2) {
+			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
+		} else if (i == 3) {
+			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
+		}
 		if (!updateUntilInput(robot, timer, redis_client)) {
 			std::cerr << "Error getting input from console!" << std::endl;
 			stop(0);
@@ -167,17 +194,12 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 		Eigen::Quaterniond quat = Eigen::Quaterniond(rotation);
 		std::cout << quat.w() << ", " << quat.x() << ", " << quat.y() << ", " << quat.z() << std::endl;
 		Eigen::Vector3d position;
-		robot->position(position, "end-effector", Eigen::Vector3d::Zero());
+		robot->position(position, "end-effector", Eigen::Vector3d(0.062, 0, 0.02));
 		std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
+		calibration.corners.push_back(position);
 	}
-	Workspace workspace;
-	workspace.x_min = 0.65;
-	workspace.x_max = 0.9;
-	workspace.y_min = 0.46;
-	workspace.y_max = -0.11;
-	workspace.z_min = -0.16;
-	workspace.z_max = -0.07;
-	return workspace;
+
+	return calibrate_workspace(calibration);
 }
 
 void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
@@ -185,6 +207,9 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
 	Eigen::Vector3d ee_pos_des(0.7, 0.4, 0.0);
 	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
+	Eigen::Matrix3d ee_rot_des(ee_ori_des);
+	// TODO: fix this - it's being calculated incorrectly.
+	Eigen::Vector3d ee_to_marker = ee_rot_des.transpose() * Eigen::Vector3d(0.062, 0, 0.02);
 
 	Eigen::VectorXd Kp(Puma::DOF);
 	Eigen::VectorXd Kv(Puma::DOF);
@@ -213,6 +238,7 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 
 		// Calculate the end-effector target position
 		ee_pos_des = workspace.mapFromHapticDevice(hapticDevicePos);
+		//ee_pos_des = workspace.mapFromHapticDevice(Eigen::Vector3d::Zero()) + ee_to_marker;
 
 		// Send desired position for visualization
 		redis_client.setEigenMatrixString(Puma::KEY_EE_POS + "_des", ee_pos_des);
