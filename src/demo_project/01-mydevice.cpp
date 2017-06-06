@@ -632,7 +632,7 @@ void updateGraphics(void)
 void updateHaptics(void)
 {
     // gains
-    const double constraint_dist_thresh = -0.05;
+    const double constraint_dist_thresh = 0.03;
     const double eta = 0.01;
 
     bool constraint_active;
@@ -659,9 +659,38 @@ void updateHaptics(void)
         redis_client.setCommandIs(ROTATION, redis_buf);
     }
 
+    Eigen::Vector3d pointa, pointb, pointc;
+
+    pointa << -0.1, -0.1, 0.01;
+    pointb << -0.1, 0.1, 0.01;
+    pointc << 0.05, 0.1, -0.05;
+    
+    redis_client.setEigenMatrixDerivedString("a", pointa);
+    redis_client.setEigenMatrixDerivedString("b", pointb);
+    redis_client.setEigenMatrixDerivedString("c", pointc);
+
     redis_client.setEigenMatrixDerivedString(POSITION, Eigen::Vector3d::Zero());
     redis_client.setEigenMatrixDerivedString(ROTATION, Eigen::Vector3d::Zero());
     redis_client.setEigenMatrixDerivedString("force", Eigen::Vector3d::Zero());
+    redis_client.getEigenMatrixDerivedString("a", pointa);
+    redis_client.getEigenMatrixDerivedString("b", pointb);
+    redis_client.getEigenMatrixDerivedString("c", pointc);
+
+
+    // Eigen::Vector3d normal a.cross(b);
+    Eigen::Vector3d center, haptic_center;
+    haptic_center << 0,0,-0.5;
+    center << (pointa(0) + pointb(0) + pointc(0))/3, (pointa(1) + pointb(1) + pointc(1))/3, (pointa(2) + pointb(2) + pointc(2))/3;
+
+    Eigen::Vector3d normal = (pointb - center).cross(pointc - center);
+
+    Eigen::Vector3d NormalizedNormal = normal.normalized();
+    
+    // Result.a = NormalizedNormal(0);
+    // Result.b = NormalizedNormal(1);
+    // Result.c = NormalizedNormal(2);
+    // Result.d = -Pt.dot(NormalizedNormal);
+    Eigen::Quaterniond result(-haptic_center.dot(NormalizedNormal), NormalizedNormal(0), NormalizedNormal(1), NormalizedNormal(2));
 
     while(simulationRunning)
     {
@@ -847,13 +876,17 @@ void updateHaptics(void)
 
         // - is distance constraint active? if so, compute constraint force
         closest_distance = position(2);
+        closest_distance = abs(result.x() * position(0) + result.y() * position(1) + result.z() * position(2) + result.w());
         constraint_active = (closest_distance < constraint_dist_thresh);
 
         force_sum = force;
         // - compute joint torques
+        std::cout << closest_distance << std::endl;
         if (constraint_active) {
             constraint_force = eta*(1/(1e-3 + closest_distance) - 1/(1e-3 + constraint_dist_thresh))*1/pow(1e-3 + closest_distance, 2);
-            force_sum(2) = force(2) +  stiffnessRatio * constraint_force > 10 ? 10 : force(2) + stiffnessRatio * constraint_force;
+            force_sum(2) = force(2) +  stiffnessRatio * constraint_force > 6 ? 6 : force(2) + stiffnessRatio * constraint_force;
+            std::cout << "force: " << force_sum(2) << std::endl;
+            // force_sum(2) = force(2);
         }
         hapticDevice->setForce(force_sum);
 
