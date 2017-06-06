@@ -239,9 +239,9 @@ int main(int argc, char** argv) {
 			idx_des_traj = updateTrajectoryPoint(x_des_traj, idx_des_traj, x_des);
 			x_des_prev = x_des;
 		}
-		std::cout <<"joint coords \n"  << robot->_q << std::endl << std::endl;
+		std::cout <<"joint coords \n"  << robot->_q.transpose() << std::endl;
 
-		std::cout << "endeffector \n"<< x << std::endl << std::endl;
+		std::cout << "endeffector \n"<< x.transpose() << std::endl;
 
 		// Update end effector desired position marker
 		if (x_des_marker != nullptr) {

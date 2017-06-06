@@ -89,14 +89,14 @@
 	<link name="end-effector">
 		<inertial>
 			<origin xyz="0.0 0.0 0.032" rpy="0 0 0" />
-			<mass value="0.09" />
-			<inertia ixx="0.01" iyy="0.01" izz="0.01" ixy="0" ixz="0" iyz="0" />
+			<mass value="0.01" />
+			<inertia ixx="0.001" iyy="0.001" izz="0.001" ixy="0" ixz="0" iyz="0" />
 		</inertial>
 		<visual>
-			<origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+			<origin xyz="0.0 0.0 0.0" rpy="0 0 1.57079632679489661923" />
 			<geometry>
 				<!-- Rod along y-axis -->
-				<mesh filename="puma_graphics/shaft2_bl.obj" scale="1 1 1" />
+				<mesh filename="puma_graphics/shaft2_bl.obj" scale="0.5 0.115 0.5" />
 			</geometry>
 		</visual>
 	</link>
