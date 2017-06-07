@@ -181,6 +181,18 @@ bool updateUntilInput(Model::ModelInterface *robot, LoopTimer& timer, RedisClien
 	}
 }
 
+void updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, /*target position*/) {
+	while (g_runloop) {
+		// Update robot
+		timer.waitForNextLoop();
+		updateRobot(robot, redis_client);
+		/* get current position from robot */
+		if (/* current position is near target position */) { // Input is available now
+			return;
+		}
+	}
+}
+
 // CONTROL PHASES
 
 void initializeJoints(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client) {
