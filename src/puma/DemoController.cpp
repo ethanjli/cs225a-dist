@@ -242,23 +242,21 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
 		if (i == 0) {
 			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208));
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208 - 0.015));
+			calibration.corners.push_back(Eigen::Vector3d(0.767857, 0.507831, -0.208286 - 0.015));
 
 		} else if (i == 1) {
 			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
+			calibration.corners.push_back(Eigen::Vector3d(0.78287, -0.0725817, -0.208068 - 0.015));
 
 		} else if (i == 2) {
 			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.38, -0.208));
+			calibration.corners.push_back(Eigen::Vector3d(0.48197, 0.496351, -0.207143));
 		} else if (i == 3) {
 			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.0, -0.208));
+			calibration.corners.push_back(Eigen::Vector3d(0.511237, -0.116364, -0.199981));
 		}
 		
-		
+		/*
 		if (!updateUntilInput(robot, timer, redis_client)) {
 			std::cerr << "Error getting input from console!" << std::endl;
 			stop(0);
@@ -276,7 +274,7 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 			position.z() -= 0.015;
 		}
 		calibration.corners.push_back(position);
-		
+		*/
 	}
 
 	return calibrate_workspace(calibration);
