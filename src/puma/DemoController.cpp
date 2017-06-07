@@ -73,22 +73,76 @@ public:
 	double y_max = 0;
 	double z_min = 0;
 	double z_max = 0;
+	Eigen::Vector3d plane_normal = Eigen::Vector3d::Zero();
+	Eigen::Vector3d centroid = Eigen::Vector3d::Zero();
+
+	Eigen::Vector3d mapFromPlane(double x, double y, double off_plane_z) {
+		double relative_x = x - centroid.x();
+		double relative_y = y - centroid.y();
+		double plane_relative_z = -1 * (plane_normal.x() * relative_x + plane_normal.y() * relative_y);
+		double plane_z = plane_relative_z + centroid.z();
+		Eigen::Vector3d plane_point(x, y, plane_z);
+		return off_plane_z * plane_normal + plane_point;
+	};
 
 	Eigen::Vector3d mapFromHapticDevice(const Eigen::Vector3d& hapticDevicePos) {
-		return Eigen::Vector3d( map_range(hapticDevicePos(0), 0.07, -0.05, x_min, x_max),
-					map_range(hapticDevicePos(1), -0.11, 0.11, y_min, y_max),
-					map_range(hapticDevicePos(2), 0.0, 0.1, z_min, z_max));
+		double x = map_range(hapticDevicePos(0), 0.07, -0.05, x_min, x_max);
+		double y = map_range(hapticDevicePos(1), -0.11, 0.11, y_min, y_max);
+		double off_plane_z = map_range(hapticDevicePos(2), 0.0, 0.1, z_min, z_max);
+		return mapFromPlane(x, y, off_plane_z);
 	};
 };
 
+Eigen::Vector3d findCentroid(std::vector<Eigen::Vector3d>& points) {
+	int num_points = points.size();
+	Eigen::Vector3d sum = Eigen::Vector3d::Zero();
+	for (Eigen::Vector3d point : points) {
+		sum += point;
+	}
+	return sum / num_points;
+}
+
+Eigen::Vector3d fitPlane(std::vector<Eigen::Vector3d>& points) {
+	Eigen::Vector3d centroid = findCentroid(points);
+
+	double xx = 0;
+	double xy = 0;
+	double xz = 0;
+	double yy = 0;
+	double yz = 0;
+	double zz = 0;
+	for (Eigen::Vector3d point : points) {
+		Eigen::Vector3d residual = point - centroid;
+		xx += residual.x() * residual.x();
+		xy += residual.x() * residual.y();
+		xz += residual.x() * residual.z();
+		yy += residual.y() * residual.y();
+		yz += residual.y() * residual.z();
+		zz += residual.z() * residual.z();
+	}
+	float det = xx * yy - xy * xy;
+	float a = (yz * xy - xz * yy) / det;
+	float b = (xz * xy - yz * xx) / det;
+	return Eigen::Vector3d(a, b, 1.0);
+}
+
 Workspace calibrate_workspace(Calibration calibration) {
 	Workspace workspace;
+	Eigen::Vector3d plane_normal = fitPlane(calibration.corners);
+	if (plane_normal.dot(Eigen::Vector3d(0.0, 0.0, 1.0)) < 0) plane_normal *= -1;
+	std::cout << "plane normal: " << plane_normal.transpose() << std::endl;
+	workspace.plane_normal = plane_normal;
+	workspace.centroid = findCentroid(calibration.corners);
 	workspace.x_min = 0.5 * (calibration.corners[2](0) + calibration.corners[3](0));
 	workspace.x_max = 0.5 * (calibration.corners[0](0) + calibration.corners[1](0));
 	workspace.y_min = 0.5 * (calibration.corners[0](1) + calibration.corners[2](1));
 	workspace.y_max = 0.5 * (calibration.corners[1](1) + calibration.corners[3](1));
-	workspace.z_min = 0.25 * (calibration.corners[0](2) + calibration.corners[1](2) + calibration.corners[2](2) + calibration.corners[3](2));
-	workspace.z_max = workspace.z_min + 0.08;
+	workspace.z_min = 0.02;
+	workspace.z_max = 0.08;
+
+	for (Eigen::Vector3d point : calibration.corners) {
+		std::cout << point.transpose() << "->" << workspace.mapFromPlane(point.x(), point.y(), 0.05).transpose() << std::endl;
+	}
 	return workspace;
 }
 
@@ -176,18 +230,23 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
 		if (i == 0) {
 			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208 - 0.015));
+
 		} else if (i == 1) {
 			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
+
 		} else if (i == 2) {
 			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.64, 0.38, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.38, -0.208));
 		} else if (i == 3) {
 			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.64, 0.0, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.0, -0.208));
 		}
-		/*
+		
+		
 		if (!updateUntilInput(robot, timer, redis_client)) {
 			std::cerr << "Error getting input from console!" << std::endl;
 			stop(0);
@@ -201,8 +260,11 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 		Eigen::Vector3d position;
 		robot->position(position, "end-effector", Eigen::Vector3d(0.062, 0, 0.02));
 		std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
+		if (i < 2) {
+			position.z() -= 0.015;
+		}
 		calibration.corners.push_back(position);
-		*/
+		
 	}
 
 	return calibrate_workspace(calibration);

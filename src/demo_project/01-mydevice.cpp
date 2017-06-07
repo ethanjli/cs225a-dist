@@ -679,7 +679,7 @@ void updateHaptics(void)
 
     // Eigen::Vector3d normal a.cross(b);
     Eigen::Vector3d center, haptic_center;
-    haptic_center << 0,0,-0.5;
+    haptic_center << 0,0,-0.05;
     center << (pointa(0) + pointb(0) + pointc(0))/3, (pointa(1) + pointb(1) + pointc(1))/3, (pointa(2) + pointb(2) + pointc(2))/3;
 
     Eigen::Vector3d normal = (pointb - center).cross(pointc - center);
