@@ -164,6 +164,7 @@ protected:
 	Eigen::VectorXd x_;
 	Eigen::VectorXd kp_;
 	Eigen::VectorXd kv_;
+	float vmax_ = 0;
 	std::string control_mode_str_;
 	std::string command_data_str_;
 	std::string kp_str_;
