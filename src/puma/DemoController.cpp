@@ -18,6 +18,10 @@
 #include <sys/select.h>
 #include <algorithm>
 
+#include <istream>
+#include <string>
+#include <vector>
+
 using namespace std;
 
 static const std::string kRobotName = "puma";
@@ -55,6 +59,7 @@ double clamp_range(double value, double min, double max) {
 }
 
 double map_range(double value, double in_min, double in_max, double out_min, double out_max) {
+	value = clamp_range(value, in_min, in_max);
 	double out = (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 	if (out_min > out_max) std::swap(out_min, out_max);
 	return clamp_range(out, out_min, out_max);
@@ -181,15 +186,31 @@ bool updateUntilInput(Model::ModelInterface *robot, LoopTimer& timer, RedisClien
 	}
 }
 
-void updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, /*target position*/) {
+bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Eigen::Vector3d& target_position, double threshold, int steady_state_threshold) {
+	// Update the robot until the user hits Enter on the console
+	Eigen::Vector3d current_position;
+	// Send desired position for visualization
+	redis_client.setEigenMatrixString(Puma::KEY_EE_POS + "_des", target_position);
+	Eigen::Vector3d previous_position = current_position;
+	int steady_state_counter = 0;
 	while (g_runloop) {
 		// Update robot
 		timer.waitForNextLoop();
 		updateRobot(robot, redis_client);
-		/* get current position from robot */
-		if (/* current position is near target position */) { // Input is available now
-			return;
+		robot->position(current_position, "end-effector", Eigen::Vector3d::Zero());
+		redis_client.setEigenMatrixDerivedString(Puma::KEY_EE_POS, current_position);
+
+		double error = (target_position - current_position).norm();
+		std::cout << "Error: " << error << std::endl;
+		if (error < threshold) break;
+
+		if (current_position == previous_position) {
+			++steady_state_counter;
+		} else {
+			steady_state_counter = 0;
 		}
+		previous_position = current_position;
+		if (steady_state_counter >= steady_state_threshold) break;
 	}
 }
 
@@ -200,7 +221,7 @@ void initializeJoints(Model::ModelInterface *robot, LoopTimer& timer, RedisClien
 	Eigen::VectorXd Kp(Puma::DOF);
 	Eigen::VectorXd Kv(Puma::DOF);
 	Eigen::VectorXd q_des(Puma::DOF);
-	const double kToleranceInitQ  = 0.1;  // Joint space initialization tolerance
+	const double kToleranceInitQ  = 0.15;  // Joint space initialization tolerance
 	const double kToleranceInitDq = 0.1;  // Joint space initialization tolerance
 
 	// If lowering gains, set Kp first. If increasing, set Kv first.
@@ -242,21 +263,23 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
 		if (i == 0) {
 			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.767857, 0.507831, -0.208286 - 0.015));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208 - 0.015));
 
 		} else if (i == 1) {
 			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.78287, -0.0725817, -0.208068 - 0.015));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
+			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
 
 		} else if (i == 2) {
 			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.48197, 0.496351, -0.207143));
+			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.38, -0.208));
 		} else if (i == 3) {
 			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.511237, -0.116364, -0.199981));
+			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.0, -0.208));
 		}
 		
-		/*
+		
 		if (!updateUntilInput(robot, timer, redis_client)) {
 			std::cerr << "Error getting input from console!" << std::endl;
 			stop(0);
@@ -274,7 +297,7 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 			position.z() -= 0.015;
 		}
 		calibration.corners.push_back(position);
-		*/
+		
 	}
 
 	return calibrate_workspace(calibration);
@@ -284,6 +307,7 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 	// Declare control variables
 	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
 	Eigen::Vector3d ee_pos_des(0.7, 0.4, 0.0);
+	
 	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
 	Eigen::Matrix3d ee_rot_des(ee_ori_des);
 	// TODO: make this account for orientation
@@ -295,6 +319,8 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 	Kp(1) = 300;
 	Kv.fill(40);
 	// Kv(1) = 20;
+
+	
 
 	// When setting new gains, must change control mode simultaneously.
 	x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
@@ -322,7 +348,9 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 		//ee_pos_des = workspace.mapFromHapticDevice(Eigen::Vector3d::Zero());
 
 		// Send desired position for visualization
+		
 		redis_client.setEigenMatrixString(Puma::KEY_EE_POS + "_des", ee_pos_des);
+
 
 		// Send command to Puma
 		x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
@@ -331,9 +359,131 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 
 }
 
+std::vector< std::vector<std::string> >  loadFromCSV( const std::string& filename )
+{
+    std::ifstream       file( filename.c_str() );
+    std::vector< std::vector<std::string> >   matrix;
+    std::vector<std::string>   row;
+    std::string                line;
+    std::string                cell;
+
+    while( file )
+    {
+        std::getline(file,line);
+        std::stringstream lineStream(line);
+        row.clear();
+
+        while( std::getline( lineStream, cell, ',' ) )
+            row.push_back( cell );
+
+        if( !row.empty() )
+            matrix.push_back( row );
+    }
+
+    for( int i=0; i<int(matrix.size()); i++ )
+    {
+        for( int j=0; j<int(matrix[i].size()); j++ )
+            std::cout << matrix[i][j] << " ";
+
+        std::cout << std::endl;
+    }
+
+    return matrix;
+}
+
+
+
+void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
+
+	std::vector<std::vector<std::string>>  autoWriteCoords; 
+	autoWriteCoords = loadFromCSV("/home/group1/Desktop/writernn/writingcoordinates3d.csv");
+	cout << autoWriteCoords[0][0];
+	int counter = 0;
+
+
+	// Declare control variables
+	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
+	Eigen::Vector3d ee_pos_des(0.7, 0.4, 0.0);
+	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
+	Eigen::Matrix3d ee_rot_des(ee_ori_des);
+	// TODO: make this account for orientation
+	Eigen::Vector3d ee_to_marker = Eigen::Vector3d(0.02, 0, -0.062);
+	Eigen::Vector3d ee_current_pos(0.0, 0.0, 0.0);
+
+	Eigen::VectorXd Kp(Puma::DOF);
+	Eigen::VectorXd Kv(Puma::DOF);
+	Kp.fill(200);
+	Kp(1) = 300;
+	Kv.fill(40);
+	// Kv(1) = 20;
+	float l2_distance = 0;
+
+	// When setting new gains, must change control mode simultaneously.
+	x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
+	redis_client.mset({
+		{Puma::KEY_CONTROL_MODE, "GOTO"},
+		{Puma::KEY_COMMAND_DATA, RedisClient::encodeEigenMatrixString(x_des)},
+		{Puma::KEY_KP, RedisClient::encodeEigenMatrixString(Kp)},
+		{Puma::KEY_KV, RedisClient::encodeEigenMatrixString(Kv)}
+	});
+
+	Eigen::Vector3d hapticDevicePos;
+	// Control loop
+	while (g_runloop) {
+		// Wait for next scheduled loop (controller must run at precise rate)
+		timer.waitForNextLoop();
+		// Read from Redis current sensor values and update the model
+		updateRobot(robot, redis_client);
+
+		// Read from the haptic device
+		redis_client.getEigenMatrixDerivedString("position", hapticDevicePos);
+
+		// Calculate the end-effector target position
+		//ee_pos_des = workspace.mapFromHapticDevice(hapticDevicePos);
+		//ee_pos_des = workspace.mapFromHapticDevice(hapticDevicePos) - ee_to_marker;
+
+		float x = std::atof(autoWriteCoords[counter][0].c_str());
+		float y = std::atof(autoWriteCoords[counter][1].c_str());
+		float z = std::atof(autoWriteCoords[counter][2].c_str());
+		int moveup = std::atoi(autoWriteCoords[counter][3].c_str());
+		Eigen::Vector3d ee_pos_des(x, y, z);
+		ee_pos_des = workspace.mapFromHapticDevice(ee_pos_des) - ee_to_marker;
+		//ee_pos_des = workspace.mapFromHapticDevice(Eigen::Vector3d::Zero());
+		cout << "ee end updateUntilPosition "<< ee_pos_des.transpose() << endl;
+
+		x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
+			// Send command to Puma
+		redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
+
+		updateUntilPosition(robot, timer, redis_client, ee_pos_des, 0.025, 10);
+
+		//puma end effector moves up
+		if (moveup == 1) {
+			// Send command to Puma
+			ee_pos_des[2] = ee_pos_des[2] + 0.01;
+			x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
+			redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
+			updateUntilPosition(robot, timer, redis_client, ee_pos_des, 0.025, 10);
+			cout << "Press enter to write the next character..." << std::endl;
+			updateUntilInput(robot, timer, redis_client);
+		}
+
+		// Send desired position for visualization
+		redis_client.setEigenMatrixString(Puma::KEY_EE_POS + "_des", ee_pos_des);
+
+		//updateUntilPosition(robot, timer, redis_client, autoWriteCoords[counter] );
+		counter = counter + 1; 
+		if (counter == autoWriteCoords.size()) {
+			break;
+		}
+	}
+
+}
+
+
 int main(int argc, char** argv) {
 
-	cout << "This program is a demo Redis controller for the Puma." << endl;
+	cout << "This program is a demo Redis controller for the Puma.1" << endl;
 
 	cout << "Loading URDF world model file: " << kWorldFile << endl;
 
@@ -371,12 +521,17 @@ int main(int argc, char** argv) {
 	Workspace workspace = calibratePositions(robot, timer, redis_client);
 
 	/***** Mirror haptic device *****/
-	cout << "Mirroring haptic device. GOTO" << endl;
-	mirrorHapticDevice(robot, timer, redis_client, workspace);
+	//cout << "Mirroring haptic device. GOTO" << endl;
+	//mirrorHapticDevice(robot, timer, redis_client, workspace);
+
+	/***** auto write *****/
+	cout << "autowrite. GOTO" << endl;
+	autoWrite(robot, timer, redis_client, workspace);
 
 	/***** Quit *****/
 	redis_client.set(Puma::KEY_CONTROL_MODE, "BREAK");
 
 	return 0;
 }
+
 
