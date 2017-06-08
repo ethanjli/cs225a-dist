@@ -125,7 +125,7 @@ cFontPtr font;
 cLabel* labelRates;
 
 // a flag for using damping (ON/OFF)
-bool useDamping = false;
+bool useDamping = true;
 
 // a flag for using force field (ON/OFF)
 bool useForceField = true;
@@ -635,10 +635,14 @@ void updateHaptics(void)
     const double constraint_dist_thresh = 0.03;
     const double eta = 0.01;
 
-    bool constraint_active;
-    double closest_distance;
-    double constraint_force;
-
+    bool z_constraint_active;
+    bool y_left_constraint_active;
+    bool y_right_constraint_active;
+    bool x_constraint_active;
+    double z_closest_distance;
+    double y_left_distance;
+    double y_right_distance;
+    double x_distance;
 
 
     // simulation in now running
@@ -663,8 +667,8 @@ void updateHaptics(void)
 
     pointa << -0.1, -0.1, 0.01;
     pointb << -0.1, 0.1, 0.01;
-    pointc << 0.05, 0.1, -0.05;
-    
+    pointc << 0.05, 0.1, 0.01;
+
     redis_client.setEigenMatrixDerivedString("a", pointa);
     redis_client.setEigenMatrixDerivedString("b", pointb);
     redis_client.setEigenMatrixDerivedString("c", pointc);
@@ -814,7 +818,7 @@ void updateHaptics(void)
             cHapticDeviceInfo info = hapticDevice->getSpecifications();
 
             // compute linear damping force
-            double Kv = 1.0 * info.m_maxLinearDamping;
+            double Kv = 0.25 * info.m_maxLinearDamping;
             cVector3d forceDamping = -Kv * linearVelocity;
             force.add(forceDamping);
 
@@ -875,18 +879,44 @@ void updateHaptics(void)
 
 
         // - is distance constraint active? if so, compute constraint force
-        closest_distance = position(2);
-        closest_distance = abs(result.x() * position(0) + result.y() * position(1) + result.z() * position(2) + result.w());
-        constraint_active = (closest_distance < constraint_dist_thresh);
+        z_closest_distance = position(2);
+        z_closest_distance = abs(result.x() * position(0) + result.y() * position(1) + result.z() * position(2) + result.w());
+        z_constraint_active = (z_closest_distance < constraint_dist_thresh);
+        y_left_distance = position(1) + 0.04 + 0.03;
+        y_right_distance = position(1) - 0.04 - 0.03;
+        y_left_constraint_active = abs(y_left_distance) < constraint_dist_thresh;
+        y_right_constraint_active = abs(y_right_distance) < constraint_dist_thresh;
+        x_distance = position(0) - 0.02 - 0.03;
+        x_constraint_active = abs(x_distance) < constraint_dist_thresh;
 
         force_sum = force;
         // - compute joint torques
-        std::cout << closest_distance << std::endl;
-        if (constraint_active) {
-            constraint_force = eta*(1/(1e-3 + closest_distance) - 1/(1e-3 + constraint_dist_thresh))*1/pow(1e-3 + closest_distance, 2);
-            force_sum(2) = force(2) +  stiffnessRatio * constraint_force > 6 ? 6 : force(2) + stiffnessRatio * constraint_force;
-            std::cout << "force: " << force_sum(2) << std::endl;
-            // force_sum(2) = force(2);
+        if (z_constraint_active) {
+            double z_constraint_force = eta*(1/(1e-3 + z_closest_distance) - 1/(1e-3 + constraint_dist_thresh))*1/pow(1e-3 + z_closest_distance, 2);
+            force_sum(2) = force(2) +  stiffnessRatio * z_constraint_force > 6 ? 6 : force(2) + stiffnessRatio * z_constraint_force;
+            std::cout << "z planar normal force: " << force_sum(2) << std::endl;
+        }
+        if (y_left_constraint_active) {
+            double y_constraint_force = eta*(1/(1e-3 + y_left_distance) - 1/(1e-3 + constraint_dist_thresh))*1/pow(1e-3 + y_left_distance, 2);
+            force_sum(1) = force_sum(1) + stiffnessRatio * y_constraint_force > 6 ? 6 : force(1) + stiffnessRatio * y_constraint_force;
+            std::cout << "y left planar normal force: " << force_sum(1) << std::endl;
+        } else if (y_right_constraint_active) {
+            double y_constraint_force = eta*(1/(1e-3 + abs(y_right_distance)) - 1/(1e-3 + constraint_dist_thresh))*1/pow(1e-3 + abs(y_right_distance), 2);
+            force_sum(1) = force_sum(1) - stiffnessRatio * y_constraint_force < -6 ? -6 : force(1) - stiffnessRatio * y_constraint_force;
+            std::cout << "y right planar normal force: " << force_sum(1) << std::endl;
+        }
+        if (x_constraint_active) {
+            double x_constraint_force = eta*(1/(1e-3 + abs(x_distance)) - 1/(1e-3 + constraint_dist_thresh))*1/pow(1e-3 + abs(x_distance), 2);
+            force_sum(0) = force(0) - stiffnessRatio * x_constraint_force < -6 ? -6 : force(2) - stiffnessRatio * x_constraint_force;
+            std::cout << "x planar normal force: " << force_sum(0) << std::endl;
+        }
+
+        if (z_constraint_active) {
+            cHapticDeviceInfo info = hapticDevice->getSpecifications();
+            double Kv = 0.75 * info.m_maxLinearDamping;
+            cVector3d forceDamping = -Kv * linearVelocity;
+            forceDamping(2) = 0;
+            force_sum.add(forceDamping);
         }
         hapticDevice->setForce(force_sum);
 

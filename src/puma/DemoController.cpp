@@ -59,7 +59,11 @@ double clamp_range(double value, double min, double max) {
 }
 
 double map_range(double value, double in_min, double in_max, double out_min, double out_max) {
-	//value = clamp_range(value, in_min, in_max);
+	if (in_min < in_max) {
+		value = clamp_range(value, in_min, in_max);
+	} else {
+		value = clamp_range(value, in_max, in_min);
+	}
 	double out = (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 	if (out_min > out_max) std::swap(out_min, out_max);
 	return clamp_range(out, out_min, out_max);
@@ -91,9 +95,9 @@ public:
 	};
 
 	Eigen::Vector3d mapFromHapticDevice(const Eigen::Vector3d& hapticDevicePos) {
-		double x = map_range(hapticDevicePos(0), 0.07, -0.05, x_min, x_max);
-		double y = map_range(hapticDevicePos(1), -0.11, 0.11, y_min, y_max);
-		double off_plane_z = map_range(hapticDevicePos(2), 0.0, 0.1, z_min, z_max);
+		double x = map_range(hapticDevicePos(0), 0.021, -0.045, x_min, x_max);
+		double y = map_range(hapticDevicePos(1), -0.04, 0.04, y_min, y_max);
+		double off_plane_z = map_range(hapticDevicePos(2), -0.008, 0.05, z_min, z_max);
 		return mapFromPlane(x, y, off_plane_z);
 	};
 
@@ -152,9 +156,11 @@ Workspace calibrate_workspace(Calibration calibration) {
 	workspace.z_min = 0.02;
 	workspace.z_max = 0.08;
 
+	/*
 	for (Eigen::Vector3d point : calibration.corners) {
 		std::cout << point.transpose() << "->" << workspace.mapFromPlane(point.x(), point.y(), 0.05).transpose() << std::endl;
 	}
+	*/
 	return workspace;
 }
 
