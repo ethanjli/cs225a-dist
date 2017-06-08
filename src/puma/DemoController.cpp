@@ -96,6 +96,13 @@ public:
 		double off_plane_z = map_range(hapticDevicePos(2), 0.0, 0.1, z_min, z_max);
 		return mapFromPlane(x, y, off_plane_z);
 	};
+
+	Eigen::Vector3d mapFromHandwritingGenerator(const Eigen::Vector3d& handwritingPos) {
+		double x = map_range(handwritingPos(1), -3, 7.5, x_min, x_max);
+		double y = map_range(handwritingPos(0), 1, 83, y_min, y_max);
+		double off_plane_z = map_range(handwritingPos(2), 0.0, 0.1, z_min, z_max);
+		return mapFromPlane(x, y, off_plane_z);
+	};
 };
 
 Eigen::Vector3d findCentroid(std::vector<Eigen::Vector3d>& points) {
@@ -153,6 +160,12 @@ Workspace calibrate_workspace(Calibration calibration) {
 
 // CONTROL HELPERS
 
+void setVelocitySaturation(double max_velocity, RedisClient& redis_client) {
+	Eigen::VectorXd v_max(1);
+	v_max.fill(max_velocity);
+	redis_client.setEigenMatrixString(Puma::KEY_VMAX, v_max);
+}
+
 void updateRobot(Model::ModelInterface *robot, RedisClient& redis_client) {
 	robot->_q = redis_client.getEigenMatrixString(Puma::KEY_JOINT_POSITIONS);
 	robot->_dq = redis_client.getEigenMatrixString(Puma::KEY_JOINT_VELOCITIES);
@@ -186,7 +199,7 @@ bool updateUntilInput(Model::ModelInterface *robot, LoopTimer& timer, RedisClien
 	}
 }
 
-bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Eigen::Vector3d& target_position, double threshold, int steady_state_threshold) {
+bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Eigen::Vector3d& target_position, int steady_state_threshold) {
 	// Update the robot until the user hits Enter on the console
 	Eigen::Vector3d current_position;
 	// Send desired position for visualization
@@ -199,10 +212,6 @@ bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisCl
 		updateRobot(robot, redis_client);
 		robot->position(current_position, "end-effector", Eigen::Vector3d::Zero());
 		redis_client.setEigenMatrixDerivedString(Puma::KEY_EE_POS, current_position);
-
-		double error = (target_position - current_position).norm();
-		std::cout << "Error: " << error << std::endl;
-		if (error < threshold) break;
 
 		if (current_position == previous_position) {
 			++steady_state_counter;
@@ -263,23 +272,21 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
 		if (i == 0) {
 			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208));
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.38, -0.208 - 0.015));
+			calibration.corners.push_back(Eigen::Vector3d(0.767857, 0.507831, -0.208286 - 0.015));
 
 		} else if (i == 1) {
 			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
-			//calibration.corners.push_back(Eigen::Vector3d(0.81, 0.0, -0.208));
+			calibration.corners.push_back(Eigen::Vector3d(0.78287, -0.0725817, -0.208068 - 0.015));
 
 		} else if (i == 2) {
 			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.38, -0.208));
+			calibration.corners.push_back(Eigen::Vector3d(0.48197, 0.496351, -0.207143));
 		} else if (i == 3) {
 			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.64, 0.0, -0.208));
+			calibration.corners.push_back(Eigen::Vector3d(0.511237, -0.116364, -0.199981));
 		}
 		
-		
+		/*
 		if (!updateUntilInput(robot, timer, redis_client)) {
 			std::cerr << "Error getting input from console!" << std::endl;
 			stop(0);
@@ -297,7 +304,7 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 			position.z() -= 0.015;
 		}
 		calibration.corners.push_back(position);
-		
+		*/
 	}
 
 	return calibrate_workspace(calibration);
@@ -380,6 +387,7 @@ std::vector< std::vector<std::string> >  loadFromCSV( const std::string& filenam
             matrix.push_back( row );
     }
 
+    /*
     for( int i=0; i<int(matrix.size()); i++ )
     {
         for( int j=0; j<int(matrix[i].size()); j++ )
@@ -387,6 +395,7 @@ std::vector< std::vector<std::string> >  loadFromCSV( const std::string& filenam
 
         std::cout << std::endl;
     }
+    */
 
     return matrix;
 }
@@ -394,9 +403,10 @@ std::vector< std::vector<std::string> >  loadFromCSV( const std::string& filenam
 
 
 void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
+	setVelocitySaturation(0.01, redis_client);
 
 	std::vector<std::vector<std::string>>  autoWriteCoords; 
-	autoWriteCoords = loadFromCSV("/home/group1/Desktop/writernn/writingcoordinates3d.csv");
+	autoWriteCoords = loadFromCSV("/home/group1/Desktop/writernn/writingcoordinates2d.csv");
 	cout << autoWriteCoords[0][0];
 	int counter = 0;
 
@@ -438,24 +448,17 @@ void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redi
 		// Read from the haptic device
 		redis_client.getEigenMatrixDerivedString("position", hapticDevicePos);
 
-		// Calculate the end-effector target position
-		//ee_pos_des = workspace.mapFromHapticDevice(hapticDevicePos);
-		//ee_pos_des = workspace.mapFromHapticDevice(hapticDevicePos) - ee_to_marker;
-
 		float x = std::atof(autoWriteCoords[counter][0].c_str());
 		float y = std::atof(autoWriteCoords[counter][1].c_str());
-		float z = std::atof(autoWriteCoords[counter][2].c_str());
-		int moveup = std::atoi(autoWriteCoords[counter][3].c_str());
-		Eigen::Vector3d ee_pos_des(x, y, z);
-		ee_pos_des = workspace.mapFromHapticDevice(ee_pos_des) - ee_to_marker;
-		//ee_pos_des = workspace.mapFromHapticDevice(Eigen::Vector3d::Zero());
-		cout << "ee end updateUntilPosition "<< ee_pos_des.transpose() << endl;
+		int moveup = std::atoi(autoWriteCoords[counter][2].c_str());
+		Eigen::Vector3d ee_pos_des(x, y, 0);
+		ee_pos_des = workspace.mapFromHandwritingGenerator(ee_pos_des) - ee_to_marker;
+		cout << "ee updateUntilPosition "<< ee_pos_des.transpose() << endl;
 
 		x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
-			// Send command to Puma
+		// Send command to Puma
 		redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
-
-		updateUntilPosition(robot, timer, redis_client, ee_pos_des, 0.025, 10);
+		updateUntilPosition(robot, timer, redis_client, ee_pos_des, 10);
 
 		//puma end effector moves up
 		if (moveup == 1) {
@@ -463,7 +466,8 @@ void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redi
 			ee_pos_des[2] = ee_pos_des[2] + 0.01;
 			x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
 			redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
-			updateUntilPosition(robot, timer, redis_client, ee_pos_des, 0.025, 10);
+			cout << "ee updateUntilPosition "<< ee_pos_des.transpose() << endl;
+			updateUntilPosition(robot, timer, redis_client, ee_pos_des, 10);
 			cout << "Press enter to write the next character..." << std::endl;
 			updateUntilInput(robot, timer, redis_client);
 		}
@@ -473,7 +477,7 @@ void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redi
 
 		//updateUntilPosition(robot, timer, redis_client, autoWriteCoords[counter] );
 		counter = counter + 1; 
-		if (counter == autoWriteCoords.size()) {
+		if (counter >= autoWriteCoords.size()) {
 			break;
 		}
 	}
@@ -526,6 +530,7 @@ int main(int argc, char** argv) {
 
 	/***** auto write *****/
 	cout << "autowrite. GOTO" << endl;
+
 	autoWrite(robot, timer, redis_client, workspace);
 
 	/***** Quit *****/

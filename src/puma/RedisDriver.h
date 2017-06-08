@@ -39,6 +39,7 @@ const std::string KEY_CONTROL_MODE = "cs225a::robot::puma::tasks::control_mode";
 const std::string KEY_COMMAND_DATA = "cs225a::robot::puma::tasks::command_data";
 const std::string KEY_KP           = "cs225a::robot::puma::tasks::kp";
 const std::string KEY_KV           = "cs225a::robot::puma::tasks::kv";
+const std::string KEY_VMAX         = "cs225a::robot::puma::tasks::vmax";
 
 // Redis keys returned by robot
 const std::string KEY_JOINT_POSITIONS  = "cs225a::robot::puma::sensors::q";
@@ -167,6 +168,7 @@ protected:
 	std::string command_data_str_;
 	std::string kp_str_;
 	std::string kv_str_;
+	std::string vmax_str_;
 
 	// Buffer of data for communication with Puma
 	float data_buffer_[SIZE_OP_SPACE_TASK] = {0};

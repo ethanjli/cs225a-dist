@@ -10,7 +10,7 @@ Please refer to the README at [tmigimatsu/cs225a-dist](https://github.com/tmigim
 If you already set up cs225a-dist elsewhere, you can add the SAI2 simulation library to this repo as symlinks. The code exampls below are for bash; if you're on Windows, you should use `mklink /J` as a replacement for `ln -s` and switch the order of the directories.
 
 ```
-ln -s "/absolute/path/to/sai2-simulation/" ./
+/absolute/path/to/sai2-simulation/" ./
 ```
 
 You will still need to clone the sai2 common library and build:
