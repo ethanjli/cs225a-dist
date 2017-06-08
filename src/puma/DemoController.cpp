@@ -97,7 +97,7 @@ public:
 	Eigen::Vector3d mapFromHapticDevice(const Eigen::Vector3d& hapticDevicePos) {
 		double x = map_range(hapticDevicePos(0), 0.021, -0.045, x_min, x_max);
 		double y = map_range(hapticDevicePos(1), -0.04, 0.04, y_min, y_max);
-		double off_plane_z = map_range(hapticDevicePos(2), -0.008, 0.05, z_min, z_max);
+		double off_plane_z = map_range(hapticDevicePos(2), -0.015, 0.05, z_min, z_max);
 		return mapFromPlane(x, y, off_plane_z);
 	};
 
@@ -279,18 +279,18 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
 		if (i == 0) {
 			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.767857, 0.507831, -0.208286 - 0.015));
+			//calibration.corners.push_back(Eigen::Vector3d(0.8, 0.3, -0.25 - 0.01));
 
 		} else if (i == 1) {
 			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.78287, -0.0725817, -0.208068 - 0.015));
+			//calibration.corners.push_back(Eigen::Vector3d(0.8, -0.2, -0.25 - 0.01));
 
 		} else if (i == 2) {
 			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.48197, 0.496351, -0.207143));
+			//calibration.corners.push_back(Eigen::Vector3d(0.55, 0.3, -0.25 - 0.01));
 		} else if (i == 3) {
 			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.511237, -0.116364, -0.199981));
+			//calibration.corners.push_back(Eigen::Vector3d(0.55, -0.2, -0.25 - 0.01));
 		}
 		
 		
@@ -305,36 +305,37 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 		Eigen::Quaterniond quat = Eigen::Quaterniond(rotation);
 		std::cout << quat.w() << ", " << quat.x() << ", " << quat.y() << ", " << quat.z() << std::endl;
 		Eigen::Vector3d position;
-		robot->position(position, "end-effector", Eigen::Vector3d(0.075, 0, 0.02));
+		robot->position(position, "end-effector", Eigen::Vector3d(0.09, 0, 0.02));
 		std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
-		/*if (i < 2) {
-			position.z() -= 0.015;
-		}*/
+
+		position.z() -= 0.01;
 		calibration.corners.push_back(position);
 		
 	}
+
+	std::cout << "Press enter to proceed." << std::endl;
+	updateUntilInput(robot, timer, redis_client);
 
 	return calibrate_workspace(calibration);
 }
 
 void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
-	setVelocitySaturation(0.2, redis_client);
+	//setVelocitySaturation(0.12, redis_client);
+	setVelocitySaturation(0.15, redis_client);
 
 	// Declare control variables
 	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
 	Eigen::Vector3d ee_pos_des(0.7, 0.4, 0.0);
 	
-	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
+	Eigen::Quaterniond ee_ori_des(0.623888, 0.0, 0.781514, 0.0);
 	Eigen::Matrix3d ee_rot_des(ee_ori_des);
 	// TODO: make this account for orientation
-	Eigen::Vector3d ee_to_marker = Eigen::Vector3d(0.02, 0, -0.075);
+	Eigen::Vector3d ee_to_marker = Eigen::Vector3d(0.02, 0, -0.09);
 
 	Eigen::VectorXd Kp(Puma::DOF);
 	Eigen::VectorXd Kv(Puma::DOF);
-	Kp.fill(200);
-	Kp(1) = 300;
+	Kp.fill(300);
 	Kv.fill(40);
-	// Kv(1) = 20;
 
 	// When setting new gains, must change control mode simultaneously.
 	x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
@@ -410,7 +411,7 @@ std::vector< std::vector<std::string> >  loadFromCSV( const std::string& filenam
 
 
 void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
-	setVelocitySaturation(0.15, redis_client);
+	setVelocitySaturation(0.12, redis_client);
 
 	std::vector<std::vector<std::string>>  autoWriteCoords; 
 	autoWriteCoords = loadFromCSV("/home/group1/Desktop/writernn/writingcoordinates2d.csv");
@@ -421,10 +422,10 @@ void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redi
 	// Declare control variables
 	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
 	Eigen::Vector3d ee_pos_des(0.7, 0.4, 0.0);
-	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
+	Eigen::Quaterniond ee_ori_des(0.623888, 0.0, 0.781514, 0.0);
 	Eigen::Matrix3d ee_rot_des(ee_ori_des);
 	// TODO: make this account for orientation
-	Eigen::Vector3d ee_to_marker = Eigen::Vector3d(0.02, 0, -0.062);
+	Eigen::Vector3d ee_to_marker = Eigen::Vector3d(0.02, 0, -0.09);
 	Eigen::Vector3d ee_current_pos(0.0, 0.0, 0.0);
 
 	Eigen::VectorXd Kp(Puma::DOF);
@@ -470,7 +471,7 @@ void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redi
 		//puma end effector moves up
 		if (moveup == 1) {
 			// Send command to Puma
-			ee_pos_des[2] = ee_pos_des[2] + 0.02;
+			ee_pos_des[2] = ee_pos_des[2] + 0.04;
 			x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
 			redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
 			cout << "ee updateUntilPosition "<< ee_pos_des.transpose() << endl;
