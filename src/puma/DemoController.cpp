@@ -199,7 +199,7 @@ bool updateUntilInput(Model::ModelInterface *robot, LoopTimer& timer, RedisClien
 	}
 }
 
-bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Eigen::Vector3d& target_position, int steady_state_threshold) {
+bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Eigen::Vector3d& target_position, double error_threshold, int steady_state_threshold) {
 	// Update the robot until the user hits Enter on the console
 	Eigen::Vector3d current_position;
 	// Send desired position for visualization
@@ -212,6 +212,7 @@ bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisCl
 		updateRobot(robot, redis_client);
 		robot->position(current_position, "end-effector", Eigen::Vector3d::Zero());
 		redis_client.setEigenMatrixDerivedString(Puma::KEY_EE_POS, current_position);
+		double error = (current_position - target_position).norm();
 
 		if (current_position == previous_position) {
 			++steady_state_counter;
@@ -219,7 +220,7 @@ bool updateUntilPosition(Model::ModelInterface *robot, LoopTimer& timer, RedisCl
 			steady_state_counter = 0;
 		}
 		previous_position = current_position;
-		if (steady_state_counter >= steady_state_threshold) break;
+		if (error < error_threshold && steady_state_counter >= steady_state_threshold) break;
 	}
 }
 
@@ -311,6 +312,8 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 }
 
 void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
+	setVelocitySaturation(0.15, redis_client);
+
 	// Declare control variables
 	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
 	Eigen::Vector3d ee_pos_des(0.7, 0.4, 0.0);
@@ -326,8 +329,6 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 	Kp(1) = 300;
 	Kv.fill(40);
 	// Kv(1) = 20;
-
-	
 
 	// When setting new gains, must change control mode simultaneously.
 	x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
@@ -403,7 +404,7 @@ std::vector< std::vector<std::string> >  loadFromCSV( const std::string& filenam
 
 
 void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
-	setVelocitySaturation(0.01, redis_client);
+	setVelocitySaturation(0.15, redis_client);
 
 	std::vector<std::vector<std::string>>  autoWriteCoords; 
 	autoWriteCoords = loadFromCSV("/home/group1/Desktop/writernn/writingcoordinates2d.csv");
@@ -458,18 +459,18 @@ void autoWrite(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redi
 		x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
 		// Send command to Puma
 		redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
-		updateUntilPosition(robot, timer, redis_client, ee_pos_des, 10);
+		updateUntilPosition(robot, timer, redis_client, ee_pos_des, 0.02, 5);
 
 		//puma end effector moves up
 		if (moveup == 1) {
 			// Send command to Puma
-			ee_pos_des[2] = ee_pos_des[2] + 0.01;
+			ee_pos_des[2] = ee_pos_des[2] + 0.02;
 			x_des << ee_pos_des, ee_ori_des.w(), ee_ori_des.x(), ee_ori_des.y(), ee_ori_des.z();
 			redis_client.setEigenMatrixString(Puma::KEY_COMMAND_DATA, x_des);
 			cout << "ee updateUntilPosition "<< ee_pos_des.transpose() << endl;
-			updateUntilPosition(robot, timer, redis_client, ee_pos_des, 10);
-			cout << "Press enter to write the next character..." << std::endl;
-			updateUntilInput(robot, timer, redis_client);
+			updateUntilPosition(robot, timer, redis_client, ee_pos_des, 0.02, 5);
+			//cout << "Press enter to write the next character..." << std::endl;
+			//updateUntilInput(robot, timer, redis_client);
 		}
 
 		// Send desired position for visualization
@@ -530,7 +531,6 @@ int main(int argc, char** argv) {
 
 	/***** auto write *****/
 	cout << "autowrite. GOTO" << endl;
-
 	autoWrite(robot, timer, redis_client, workspace);
 
 	/***** Quit *****/
