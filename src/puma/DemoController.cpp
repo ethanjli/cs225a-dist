@@ -279,21 +279,21 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
 		if (i == 0) {
 			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.8, 0.3, -0.25 - 0.01));
+			calibration.corners.push_back(Eigen::Vector3d(0.696871, 0.318851, -0.252566 - 0.01));
 
 		} else if (i == 1) {
 			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.8, -0.2, -0.25 - 0.01));
+			calibration.corners.push_back(Eigen::Vector3d(0.668841, -0.195548, -0.258385 - 0.01));
 
 		} else if (i == 2) {
 			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.55, 0.3, -0.25 - 0.01));
+			calibration.corners.push_back(Eigen::Vector3d(0.465828, 0.33923, -0.247639 - 0.01));
 		} else if (i == 3) {
 			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
-			//calibration.corners.push_back(Eigen::Vector3d(0.55, -0.2, -0.25 - 0.01));
+			calibration.corners.push_back(Eigen::Vector3d(0.436076, -0.187947, -0.252426 - 0.01));
 		}
 		
-		
+		/*
 		if (!updateUntilInput(robot, timer, redis_client)) {
 			std::cerr << "Error getting input from console!" << std::endl;
 			stop(0);
@@ -310,13 +310,17 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 
 		position.z() -= 0.01;
 		calibration.corners.push_back(position);
+		*/
 		
 	}
 
 	std::cout << "Press enter to proceed." << std::endl;
 	updateUntilInput(robot, timer, redis_client);
 
-	return calibrate_workspace(calibration);
+	Workspace workspace = calibrate_workspace(calibration);
+	redis_client.setEigenMatrixDerivedString("robot_plane_z", workspace.mapFromHapticDevice(Eigen::Vector3d(0.0, 0.0, -0.015)) - Eigen::Vector3d(0.02, 0, -0.09));
+
+	return workspace;
 }
 
 void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
@@ -347,6 +351,7 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 	});
 
 	Eigen::Vector3d hapticDevicePos;
+	Eigen::Vector3d planar_error;
 	// Control loop
 	while (g_runloop) {
 		// Wait for next scheduled loop (controller must run at precise rate)
@@ -356,6 +361,16 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 
 		// Read from the haptic device
 		redis_client.getEigenMatrixDerivedString("position", hapticDevicePos);
+
+		if (hapticDevicePos(2) <= 0.0) {
+			Eigen::Vector3d position;
+			robot->position(position, "end-effector", Eigen::Vector3d(0.09, 0, 0.02));
+			//std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
+			planar_error = position - ee_pos_des;
+			redis_client.setEigenMatrixDerivedString("z_error", planar_error);
+		} else {
+			redis_client.setEigenMatrixDerivedString("z_error", Eigen::Vector3d::Zero());
+		}
 
 		// Calculate the end-effector target position
 		//ee_pos_des = workspace.mapFromHapticDevice(hapticDevicePos);

@@ -215,6 +215,8 @@ int main(int argc, char** argv) {
 	/********** End Custom Visualizer Code **********/
 #endif // ENABLE_TRAJECTORIES
 
+	Eigen::Vector3d z_value;
+	redis_client.getEigenMatrixDerivedString("robot_plane_z", z_value);
     // while window is open:
     while (!glfwWindowShouldClose(window))
 	{
@@ -228,9 +230,12 @@ int main(int argc, char** argv) {
 		redis_client.getEigenMatrixDerivedString(EE_POSITION_KEY, x);
 		redis_client.getEigenMatrixDerivedString(EE_POSITION_DESIRED_KEY, x_des);
 
+		//std::cout << x(2) << ", " << z_value(2) << std::endl;
 		// Update end effector position trajectory
-		if ((x - x_prev).norm() > kTrajectoryMinUpdateDistance) {
-			idx_traj = updateTrajectoryPoint(x_traj, idx_traj, x);
+		if ((x - x_prev).norm() > kTrajectoryMinUpdateDistance){
+			if( x_des(2) <= z_value(2)) {
+				idx_traj = updateTrajectoryPoint(x_traj, idx_traj, x);
+			}
 			x_prev = x;
 		}
 
