@@ -59,7 +59,7 @@ double clamp_range(double value, double min, double max) {
 }
 
 double map_range(double value, double in_min, double in_max, double out_min, double out_max) {
-	value = clamp_range(value, in_min, in_max);
+	//value = clamp_range(value, in_min, in_max);
 	double out = (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 	if (out_min > out_max) std::swap(out_min, out_max);
 	return clamp_range(out, out_min, out_max);
@@ -273,21 +273,21 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 	for (int i = 0; i < 4; ++i) { // Calibrate on the 4 corners
 		if (i == 0) {
 			std::cout << "Move the marker tip to the far left corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.767857, 0.507831, -0.208286 - 0.015));
+			//calibration.corners.push_back(Eigen::Vector3d(0.767857, 0.507831, -0.208286 - 0.015));
 
 		} else if (i == 1) {
 			std::cout << "Move the marker tip to the far right corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.78287, -0.0725817, -0.208068 - 0.015));
+			//calibration.corners.push_back(Eigen::Vector3d(0.78287, -0.0725817, -0.208068 - 0.015));
 
 		} else if (i == 2) {
 			std::cout << "Move the marker tip to the near left corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.48197, 0.496351, -0.207143));
+			//calibration.corners.push_back(Eigen::Vector3d(0.48197, 0.496351, -0.207143));
 		} else if (i == 3) {
 			std::cout << "Move the marker tip to the near right corner away from the computer." << std::endl;
-			calibration.corners.push_back(Eigen::Vector3d(0.511237, -0.116364, -0.199981));
+			//calibration.corners.push_back(Eigen::Vector3d(0.511237, -0.116364, -0.199981));
 		}
 		
-		/*
+		
 		if (!updateUntilInput(robot, timer, redis_client)) {
 			std::cerr << "Error getting input from console!" << std::endl;
 			stop(0);
@@ -299,20 +299,20 @@ Workspace calibratePositions(Model::ModelInterface *robot, LoopTimer& timer, Red
 		Eigen::Quaterniond quat = Eigen::Quaterniond(rotation);
 		std::cout << quat.w() << ", " << quat.x() << ", " << quat.y() << ", " << quat.z() << std::endl;
 		Eigen::Vector3d position;
-		robot->position(position, "end-effector", Eigen::Vector3d(0.062, 0, 0.02));
+		robot->position(position, "end-effector", Eigen::Vector3d(0.075, 0, 0.02));
 		std::cout << position.x() << ", " << position.y() << ", " << position.z() << std::endl;
-		if (i < 2) {
+		/*if (i < 2) {
 			position.z() -= 0.015;
-		}
+		}*/
 		calibration.corners.push_back(position);
-		*/
+		
 	}
 
 	return calibrate_workspace(calibration);
 }
 
 void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisClient& redis_client, Workspace workspace) {
-	setVelocitySaturation(0.15, redis_client);
+	setVelocitySaturation(0.2, redis_client);
 
 	// Declare control variables
 	Eigen::VectorXd x_des(Puma::SIZE_OP_SPACE_TASK);
@@ -321,7 +321,7 @@ void mirrorHapticDevice(Model::ModelInterface *robot, LoopTimer& timer, RedisCli
 	Eigen::Quaterniond ee_ori_des(0.684764, -0.013204, 0.728463, 0.0163064);
 	Eigen::Matrix3d ee_rot_des(ee_ori_des);
 	// TODO: make this account for orientation
-	Eigen::Vector3d ee_to_marker = Eigen::Vector3d(0.02, 0, -0.062);
+	Eigen::Vector3d ee_to_marker = Eigen::Vector3d(0.02, 0, -0.075);
 
 	Eigen::VectorXd Kp(Puma::DOF);
 	Eigen::VectorXd Kv(Puma::DOF);
@@ -526,12 +526,12 @@ int main(int argc, char** argv) {
 	Workspace workspace = calibratePositions(robot, timer, redis_client);
 
 	/***** Mirror haptic device *****/
-	//cout << "Mirroring haptic device. GOTO" << endl;
-	//mirrorHapticDevice(robot, timer, redis_client, workspace);
+	cout << "Mirroring haptic device. GOTO" << endl;
+	mirrorHapticDevice(robot, timer, redis_client, workspace);
 
 	/***** auto write *****/
-	cout << "autowrite. GOTO" << endl;
-	autoWrite(robot, timer, redis_client, workspace);
+	//cout << "autowrite. GOTO" << endl;
+	//autoWrite(robot, timer, redis_client, workspace);
 
 	/***** Quit *****/
 	redis_client.set(Puma::KEY_CONTROL_MODE, "BREAK");
